@@ -1,11 +1,36 @@
 #conda_env: verl
 import os
-from datasets import Dataset, load_dataset
+import json
+from datasets import Dataset, load_dataset, Dataset
 
 import argparse
 
 CURRENT_FILE_PATH = os.path.abspath(__file__)
 PROJECT_ROOT = os.path.dirname(CURRENT_FILE_PATH)
+
+def chat_template(question):
+    prompt = "<|im_start|>system\nPlease reason step by step, and present the answer in LaTex format: \\boxed{Your answer}<|im_end|>\n"
+    prompt += f"<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n"
+    return prompt
+
+def load_poly_easy(mode, data_path = "/home/allanz/omega/easy_poly_balanced.jsonl", turn_off_thinking=False):
+    data = []
+    with open(data_path, "r") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            temp_data = json.loads(line)
+            print(temp_data)
+            prompt = "<|im_start|>system\nPlease reason step by step, and present the answer in LaTex format: \\boxed{Your answer}<|im_end|>\n"
+            prompt += f"<|im_start|>user\n{temp_data['prompt']}<|im_end|>\n<|im_start|>assistant\n"
+            temp_data['prompt'] = prompt
+            data.append(temp_data)
+
+    if mode == "train":
+        return Dataset.from_list(data).select(range(900))
+    if mode == "eval":
+        return Dataset.from_list(data).select(range(900, 1000))
 
 if __name__ == '__main__':
     # example code for turing gsm8k into parquet file for verl training
@@ -13,18 +38,25 @@ if __name__ == '__main__':
     if not os.path.isdir(os.path.join(PROJECT_ROOT, "datasets")):
         os.makedirs(os.path.join(PROJECT_ROOT, "datasets"))
 
-    dataset_name = "gsm8k"
+    dataset_name = "poly_easy"
     dataset_save_path = os.path.join(PROJECT_ROOT, "datasets", dataset_name)
 
-    train_dataset = load_dataset("openai/gsm8k", "main")["train"]
-    test_dataset = load_dataset("openai/gsm8k", "main")["test"]
+    #train_dataset = load_dataset("hiyouga/math12k")["train"]
+    #test_dataset = load_dataset("hiyouga/math12k")["test"]
+    train_dataset = load_poly_easy("train")
+    test_dataset = load_poly_easy("eval")
+
     print(train_dataset[0])
 
     # Construct a `def make_map_fn(split)` for the corresponding datasets.
     def make_map_fn(split):
         def process_fn(example, idx):
-            question = example["question"]
-            answer = example["answer"]
+            #question = chat_template(example["problem"])
+            #answer = example["answer"]
+            question = example["prompt"]
+            # make this a string or else when we grade it won't work
+
+            answer = str(example["ground_truth"])
             data = {
                 "data_source": f"{dataset_name}",
                 "prompt": [{
