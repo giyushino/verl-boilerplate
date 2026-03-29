@@ -4,33 +4,34 @@ import json
 from datasets import Dataset, load_dataset, Dataset
 
 import argparse
+import re
 
 CURRENT_FILE_PATH = os.path.abspath(__file__)
 PROJECT_ROOT = os.path.dirname(CURRENT_FILE_PATH)
 
 def chat_template(question):
-    prompt = "<|im_start|>system\nPlease reason step by step, and present the answer in LaTex format: \\boxed{Your answer}<|im_end|>\n"
+    prompt = "<|im_start|>system\nPlease reason step by step, and present the answer in LaTeX format: \\boxed{PersonA is a knight/knave, PersonB is a knight/knave, ...} listing every person and their role.<|im_end|>\n"
     prompt += f"<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n"
     return prompt
 
-def load_poly_easy(mode, data_path = "/home/allanz/omega/easy_poly_balanced.jsonl", turn_off_thinking=False):
-    data = []
-    with open(data_path, "r") as file:
-        for line in file:
-            line = line.strip()
-            if not line:
-                continue
-            temp_data = json.loads(line)
-            print(temp_data)
-            prompt = "<|im_start|>system\nPlease reason step by step, and present the answer in LaTex format: \\boxed{Your answer}<|im_end|>\n"
-            prompt += f"<|im_start|>user\n{temp_data['prompt']}<|im_end|>\n<|im_start|>assistant\n"
-            temp_data['prompt'] = prompt
-            data.append(temp_data)
-
+def load_knights_knave(mode: str, turn_off_thinking=False):
     if mode == "train":
-        return Dataset.from_list(data).select(range(900))
-    if mode == "eval":
-        return Dataset.from_list(data).select(range(900, 1000))
+        dataset = load_dataset('K-and-K/knights-and-knaves', 'train')
+    elif mode == "eval":
+        dataset = load_dataset('K-and-K/knights-and-knaves', 'test')
+
+    reformatted = []
+    for i in range(2, 5):
+        for element in dataset[f"{i}ppl"]:
+            prompt = element["quiz"]
+            pairs = re.findall(r'(\w+) is a (knight|knave)', element["solution_text"])
+            print(pairs)
+            result = dict(pairs)
+            new_data = {"prompt": chat_template(prompt), "ground_truth": json.dumps(result)}
+            reformatted.append(new_data)
+
+    return Dataset.from_list(reformatted)
+
 
 if __name__ == '__main__':
     # example code for turing gsm8k into parquet file for verl training
@@ -38,13 +39,11 @@ if __name__ == '__main__':
     if not os.path.isdir(os.path.join(PROJECT_ROOT, "datasets")):
         os.makedirs(os.path.join(PROJECT_ROOT, "datasets"))
 
-    dataset_name = "poly_easy"
+    dataset_name = f"knights_knave_easier"
     dataset_save_path = os.path.join(PROJECT_ROOT, "datasets", dataset_name)
 
-    #train_dataset = load_dataset("hiyouga/math12k")["train"]
-    #test_dataset = load_dataset("hiyouga/math12k")["test"]
-    train_dataset = load_poly_easy("train")
-    test_dataset = load_poly_easy("eval")
+    train_dataset = load_knights_knave("train")
+    test_dataset = load_knights_knave("eval")
 
     print(train_dataset[0])
 
@@ -83,3 +82,4 @@ if __name__ == '__main__':
     train_dataset.to_parquet(os.path.join(dataset_save_path, 'train.parquet'))
     test_dataset.to_parquet(os.path.join(dataset_save_path, 'test.parquet'))
     print(f"datasets saved to {dataset_save_path}")
+
